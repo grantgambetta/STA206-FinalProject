@@ -1,0 +1,269 @@
+---
+title: "causal_inference"
+authors: "Collin, Grant, Jay"
+date: "12/2/2021"
+output: "html_document"
+---
+
+```{r message=FALSE, warning=FALSE}
+# Importing the dataset and all the libraries required
+# Dataset Description: 
+# http://sekhon.berkeley.edu/matching/lalonde.html description of the dataset
+#AER article where the dataset is from https://business.baylor.edu//scott_cunningham/teaching/lalonde-1986.pdf
+knitr::opts_chunk$set(echo = TRUE)
+#install.packages("qte")
+library(qte)
+library(AER)
+library(dplyr)
+library(ggfortify)
+library(ggplot2)
+library(tidyr)
+library(PerformanceAnalytics)
+library(gridExtra)
+library(MASS)
+library(stargazer)
+library(caret)
+work_training_df = lalonde.exp
+head(work_training_df)
+dim(work_training_df)
+```
+
+# Exploratory Data Analysis
+```{r}
+# Summarising the dataframe based on the treatment variable
+# 0 - Didnt go through the program 1 - went through the program
+work_training_df %>% 
+  group_by(treat) %>% 
+  summarise(count = n())
+  
+#Look at earnings for both groups in 75 and 78
+plot_data = work_training_df %>% 
+  pivot_longer(cols = c(re75,re78), names_to = "earnings_year",values_to = "earnings")
+plot_data %>% 
+  group_by(treat,earnings_year) %>% 
+  summarise(average_earnings = mean(earnings))
+plot_data
+ggplot(data = plot_data, mapping = aes(x = earnings_year, y = earnings, fill = as.factor(treat)))+
+  geom_boxplot()+
+  theme_minimal()+
+  ylim(c(0, 20000)) + 
+  ggtitle("Box Plot: Earnings in 1975 and 1978", subtitle = "comparison between control and treatment groups")
+  
+```
+
+We can see that clearly the earnings are higher for the people who recieved the treatment.
+
+```{r}
+# Checking for missing values in the data
+colSums(is.na(work_training_df))
+```
+
+There are no NA values in the dataset.
+
+```{r}
+# Looking for all the classes that need to be converted into factors depending upon them being indicators
+sapply(work_training_df, class)
+```
+
+The following variables need to be converted to factors: education, black, hispanic, married, nodegree, u74, u75, and treat.
+
+```{r}
+# convert variables to factors
+work_training_df <- work_training_df %>% mutate_if(is.integer, as.factor)
+sapply(work_training_df, class)
+```
+
+```{r}
+# Instead of storing all the levels on years of education ranging from 3-16 , in this study we maintain 3 primary level ie. 0 - Elementary 1 - High School and 2 - College 
+encode <- function(col) {
+  if (col %in% c(3:8)) {
+    return(0)
+  } else if (col %in% c(9:12)) {
+    return(1)
+  } else {
+    return(2)
+  }
+}
+work_training_df$education =  as.factor(sapply(work_training_df$education,encode))
+work_training_df
+```
+
+
+```{r}
+# Seeing the effect of having a high level education on the earnings of the people
+ggplot(data = work_training_df, mapping = aes(x = treat, y = re78, fill = education)) +
+  geom_boxplot() +
+  theme_minimal() + 
+  ylim(c(0,20000))
+```
+
+```{r}
+# Seeing the distribution of the earnings based on the treatment variable
+filtered_df_0 <- work_training_df %>% filter(treat == 0)
+filtered_df_1 <- work_training_df %>% filter(treat == 1)
+p1 <- ggplot(data = filtered_df_0, aes(re78)) + 
+  geom_histogram()
+p2 <- ggplot(data = filtered_df_1, aes(re78)) + 
+  geom_histogram()
+grid.arrange(p1, p2, nrow=1)
+```
+
+```{r}
+# Working on getting the appropriate transformation 
+work_training_df_exp <- lalonde.exp
+sapply(work_training_df_exp %>% dplyr::select_if(is.integer),as.factor)
+work_training_df_exp$education =  as.factor(sapply(work_training_df$education,encode))
+# Deciding on the sqrt transformation as the graph is most normal like.
+work_training_df_exp <- work_training_df %>% dplyr::select(-c(id))
+work_training_df_exp$re78.transformed <- sqrt(work_training_df_exp$re78)
+hist(work_training_df_exp$re78.transformed, breaks = 30)
+```
+
+```{r}
+# Fitting a model to see whether the performance improves with the transformation
+m_test = lm(re78.transformed ~ ., data = work_training_df_exp %>% dplyr::select(-c("re78")))
+m_test.summary = summary(m_test)
+m_test.summary
+plot(m_test)
+library(skedastic)
+white_lm(m_test)
+```
+
+
+```{r}
+## Implementation of StepAIC
+work_training_df_exp <- lalonde.exp
+work_training_df_exp <- work_training_df_exp %>% dplyr::select(-c(id))
+sapply(work_training_df_exp %>% dplyr::select_if(is.integer),as.factor)
+work_training_df_exp$education =  as.factor(sapply(work_training_df_exp$education,encode))
+work_training_df_exp$re78.transformed <- sqrt(work_training_df_exp$re78)
+hist(work_training_df_exp$re78.transformed, breaks = 30)
+# Dataframe being used atm = work_training_df_exp
+colnames(work_training_df_exp)
+# Selecting the required columns
+work_training_df_exp <- work_training_df_exp %>% dplyr::select(-c("re78"))
+# Scaling all the variables
+work_training_df_exp <- work_training_df_exp %>% dplyr::mutate_if(is.numeric, scale)
+# Model 0
+m0 <- lm(re78.transformed ~ 1, data = work_training_df_exp)
+# Full Model
+m.full <- lm(re78.transformed ~ .^2, data = work_training_df_exp)
+# Implementing forward selection
+forward.aic <- stepAIC(m0, scope = list(lower = ~1, upper = m.full), direction = "both", k = log(length(work_training_df_exp)), trace = 0)
+forward.aic$anova
+forward.aic.summary <- summary(forward.aic)
+png("ResidualsVsFitted.png", width = 800, height = 600)
+p1 <- plot(forward.aic, which = 1)
+dev.off()
+p1<-ggplot(forward.aic, aes(.fitted, .resid))+geom_point() + stat_smooth(method="loess", level = 0)+geom_hline(yintercept=0, col="red", linetype="dashed") + xlab("Fitted values")+ylab("Residuals") +ggtitle("Residual vs Fitted Plot", ) + theme_minimal() + theme(plot.title = element_text(hjust = 0.5))
+p1
+ggsave("FittedVsResiduals.png",p1)    
+car::vif(forward.aic)
+# Checking for endogenity between the X variables and the residuals using Wu-Hausman Test
+library(AER)
+ivreg1 <- ivreg(re78.transformed ~ black + treat + education + re75 + 
+    black:education | u75, data = work_training_df_exp)
+wu_hausman_test <- summary(ivreg1 ,diagnostics = TRUE)$diagnostics[8,]
+wu_hausman_test
+# Exporting the output as a latex
+knitr::kable(wu_hausman_test,"latex")
+white_lm(forward.aic)
+```
+
+
+
+
+
+
+```{r}
+# Experimentation 
+# Keeping re78 as it is and checking for sqrt of other variables
+work_training_df_exp <- lalonde.exp
+work_training_df_exp <- work_training_df_exp %>% dplyr::select(-c(id))
+work_training_df_exp$education <- as.numeric(work_training_df$education)
+sapply(work_training_df_exp %>% dplyr::select_if(is.integer),as.factor)
+work_training_df_exp$education =  as.factor(sapply(work_training_df_exp$education,encode))
+re78 <- work_training_df_exp$re78
+work_training_df_exp <- work_training_df_exp %>% dplyr::select(-c(re78)) %>% mutate_if(is.numeric,function(x) return(sqrt(x))) 
+work_training_df_exp$re78 <- re78
+colnames(work_training_df_exp)
+m <- lm(re78 ~ ., data = work_training_df_exp)
+summary(m)
+plot(m)
+null_model <- lm(re78 ~ 1, data = work_training_df_exp)
+full_model <- lm(re78 ~ .^2, data = work_training_df_exp)
+forward.aic <- stepAIC(null_model, scope = list(lower = null_model, upper = full_model), direction = "both", k = 2, trace = 0)
+forward.aic$anova
+summary(forward.aic)
+library(skedastic)
+white_lm(forward.aic)
+plot(forward.aic)
+ivreg1 <- ivreg(re78 ~ education + black + treat + re75 + education:black + education:treat  | u74, data = work_training_df_exp)
+wu_hausman_test <- summary(ivreg1 ,vcov = sandwich, diagnostics = TRUE)$diagnostics[8,]
+wu_hausman_test
+```
+
+```{r}
+# Model proposed.
+m_1 <- lm(re78 ~ treat + age + I(age^2) + education + nodegree + black + hispanic , data = work_training_df_exp)
+summary(m_1)
+plot(m_1)
+stargazer(m_1)
+white_lm(m_1)
+ivreg1 <- ivreg(re78 ~  treat + age + I(age^2) + education + nodegree + black + hispanic | u74, data = work_training_df_exp)
+summary(ivreg1, diagnostics = T)
+wu_hausman_test <- summary(ivreg1 ,vcov = sandwich, diagnostics = TRUE)$diagnostics[8,]
+wu_hausman_test
+autoplot(m_1, which = 1:2) + theme_minimal()
+```
+
+```{r}
+summary(m_1)
+```
+
+```{r}
+# Getting the obs data
+obs_df <- lalonde.psid
+# Changing values that are indicators retaining age to be as it is
+obs_df$treat <- as.factor(obs_df$treat)
+obs_df$black <- as.factor(obs_df$black)
+obs_df$hispanic <- as.factor(obs_df$hispanic)
+obs_df$married <- as.factor(obs_df$married)
+obs_df$nodegree <- as.factor(obs_df$nodegree)
+obs_df$u74 <- as.factor(obs_df$u74)
+obs_df$u75 <- as.factor(obs_df$u75)
+obs_df$education <- as.factor(sapply(obs_df$education, encode))
+# Splitting the data into train and test (75 - 25 split)
+obs.train <- obs_df %>% dplyr::sample_frac(0.70)
+obs.test <- dplyr::anti_join(obs_df,obs.train,by = "id")
+obs.train <- obs.train %>% dplyr::select(-c("id"))
+obs.test <- obs.test %>% dplyr::select(-c("id"))
+# NULL Model
+obs.m0 <- lm(re78 ~ 1, data = obs.train)
+# FULL Model
+obs.m_full <- lm(re78 ~ .^2, data = obs.train)
+# Step AIC on the model
+forward.aic <- stepAIC(obs.m0, scope = list(lower = obs.m0, upper = obs.m_full), direction = "both", k = 2, trace = 0)
+# Formula definition 
+fm <- as.formula("re78 ~ re75 + re74 + education + age + hispanic + 
+    black + re75:education + re75:hispanic + age:hispanic + re75:age + 
+    education:age")
+# Implementing Train Control using LOOCV
+ctrl <- trainControl(method = "LOOCV")
+model <- train(fm, data = obs.train, method = "lm", trControl = ctrl)
+summary(model)
+preds.loocv <- predict(model, newdata = obs.test, level = 0.95)
+postResample(preds.loocv, obs.test$re78)
+# Implementing Train Control using cv
+ctrl <- trainControl(method = "cv", number = 5)
+model <- train(fm, data = obs.train, method = "lm", trControl = ctrl)
+summary(model)
+preds.cv_5 <- predict(model, newdata = obs.test, level = 0.95)
+postResample(preds.loocv, obs.test$re78)
+# Implementing Train Control using cv
+ctrl <- trainControl(method = "cv", number = 10)
+model <- train(fm, data = obs.train, method = "lm", trControl = ctrl)
+summary(model)
+preds.cv_5 <- predict(model, newdata = obs.test, level = 0.95)
+postResample(preds.loocv, obs.test$re78)
+```

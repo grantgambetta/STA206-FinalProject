@@ -1,2 +1,2 @@
-# STA206_FinalProject
+# STA206 Final Project
 Using both observational and experimental data from economist Robert LaLonde’s paper, “Evaluating the Econometric Evaluations of Training Programs with Ex- perimental Data”, we explore the application of linear regression in quantify- ing the effect of participation in a jobs training program. Whereas LaLonde’s focuses on comparing estimates obtained using both experimental and observa- tional data, we delve deeper into verifying the statistical assumptions required to appropriately apply regression to this problem using the experimental data. We then go a completely different route, and attempt to (with minimal success) develop a model for predicting an individual’s earnings using the observational data.

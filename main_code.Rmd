@@ -10,8 +10,10 @@ output: "html_document"
 # Dataset Description: 
 # http://sekhon.berkeley.edu/matching/lalonde.html description of the dataset
 #AER article where the dataset is from https://business.baylor.edu//scott_cunningham/teaching/lalonde-1986.pdf
+
 knitr::opts_chunk$set(echo = TRUE)
 #install.packages("qte")
+
 library(qte)
 library(AER)
 library(dplyr)
@@ -23,6 +25,7 @@ library(gridExtra)
 library(MASS)
 library(stargazer)
 library(caret)
+
 work_training_df = lalonde.exp
 head(work_training_df)
 dim(work_training_df)
@@ -43,12 +46,12 @@ plot_data %>%
   group_by(treat,earnings_year) %>% 
   summarise(average_earnings = mean(earnings))
 plot_data
+
 ggplot(data = plot_data, mapping = aes(x = earnings_year, y = earnings, fill = as.factor(treat)))+
   geom_boxplot()+
   theme_minimal()+
   ylim(c(0, 20000)) + 
   ggtitle("Box Plot: Earnings in 1975 and 1978", subtitle = "comparison between control and treatment groups")
-  
 ```
 
 We can see that clearly the earnings are higher for the people who recieved the treatment.
@@ -101,6 +104,7 @@ ggplot(data = work_training_df, mapping = aes(x = treat, y = re78, fill = educat
 # Seeing the distribution of the earnings based on the treatment variable
 filtered_df_0 <- work_training_df %>% filter(treat == 0)
 filtered_df_1 <- work_training_df %>% filter(treat == 1)
+
 p1 <- ggplot(data = filtered_df_0, aes(re78)) + 
   geom_histogram()
 p2 <- ggplot(data = filtered_df_1, aes(re78)) + 
@@ -113,6 +117,7 @@ grid.arrange(p1, p2, nrow=1)
 work_training_df_exp <- lalonde.exp
 sapply(work_training_df_exp %>% dplyr::select_if(is.integer),as.factor)
 work_training_df_exp$education =  as.factor(sapply(work_training_df$education,encode))
+
 # Deciding on the sqrt transformation as the graph is most normal like.
 work_training_df_exp <- work_training_df %>% dplyr::select(-c(id))
 work_training_df_exp$re78.transformed <- sqrt(work_training_df_exp$re78)
@@ -125,6 +130,7 @@ m_test = lm(re78.transformed ~ ., data = work_training_df_exp %>% dplyr::select(
 m_test.summary = summary(m_test)
 m_test.summary
 plot(m_test)
+
 library(skedastic)
 white_lm(m_test)
 ```
@@ -138,8 +144,10 @@ sapply(work_training_df_exp %>% dplyr::select_if(is.integer),as.factor)
 work_training_df_exp$education =  as.factor(sapply(work_training_df_exp$education,encode))
 work_training_df_exp$re78.transformed <- sqrt(work_training_df_exp$re78)
 hist(work_training_df_exp$re78.transformed, breaks = 30)
+
 # Dataframe being used atm = work_training_df_exp
 colnames(work_training_df_exp)
+
 # Selecting the required columns
 work_training_df_exp <- work_training_df_exp %>% dplyr::select(-c("re78"))
 # Scaling all the variables
@@ -153,26 +161,26 @@ forward.aic <- stepAIC(m0, scope = list(lower = ~1, upper = m.full), direction =
 forward.aic$anova
 forward.aic.summary <- summary(forward.aic)
 png("ResidualsVsFitted.png", width = 800, height = 600)
+
 p1 <- plot(forward.aic, which = 1)
 dev.off()
-p1<-ggplot(forward.aic, aes(.fitted, .resid))+geom_point() + stat_smooth(method="loess", level = 0)+geom_hline(yintercept=0, col="red", linetype="dashed") + xlab("Fitted values")+ylab("Residuals") +ggtitle("Residual vs Fitted Plot", ) + theme_minimal() + theme(plot.title = element_text(hjust = 0.5))
+p1 <- ggplot(forward.aic, aes(.fitted, .resid))+geom_point() + stat_smooth(method="loess", level = 0)+geom_hline(yintercept=0, col="red", linetype="dashed") + xlab("Fitted values")+ylab("Residuals") +ggtitle("Residual vs Fitted Plot", ) + theme_minimal() + theme(plot.title = element_text(hjust = 0.5))
 p1
 ggsave("FittedVsResiduals.png",p1)    
+
 car::vif(forward.aic)
+
 # Checking for endogenity between the X variables and the residuals using Wu-Hausman Test
 library(AER)
 ivreg1 <- ivreg(re78.transformed ~ black + treat + education + re75 + 
     black:education | u75, data = work_training_df_exp)
 wu_hausman_test <- summary(ivreg1 ,diagnostics = TRUE)$diagnostics[8,]
 wu_hausman_test
+
 # Exporting the output as a latex
 knitr::kable(wu_hausman_test,"latex")
 white_lm(forward.aic)
 ```
-
-
-
-
 
 
 ```{r}
@@ -189,12 +197,14 @@ work_training_df_exp$re78 <- re78
 colnames(work_training_df_exp)
 m <- lm(re78 ~ ., data = work_training_df_exp)
 summary(m)
+
 plot(m)
 null_model <- lm(re78 ~ 1, data = work_training_df_exp)
 full_model <- lm(re78 ~ .^2, data = work_training_df_exp)
 forward.aic <- stepAIC(null_model, scope = list(lower = null_model, upper = full_model), direction = "both", k = 2, trace = 0)
 forward.aic$anova
 summary(forward.aic)
+
 library(skedastic)
 white_lm(forward.aic)
 plot(forward.aic)
@@ -248,18 +258,21 @@ forward.aic <- stepAIC(obs.m0, scope = list(lower = obs.m0, upper = obs.m_full),
 fm <- as.formula("re78 ~ re75 + re74 + education + age + hispanic + 
     black + re75:education + re75:hispanic + age:hispanic + re75:age + 
     education:age")
+    
 # Implementing Train Control using LOOCV
 ctrl <- trainControl(method = "LOOCV")
 model <- train(fm, data = obs.train, method = "lm", trControl = ctrl)
 summary(model)
 preds.loocv <- predict(model, newdata = obs.test, level = 0.95)
 postResample(preds.loocv, obs.test$re78)
+
 # Implementing Train Control using cv
 ctrl <- trainControl(method = "cv", number = 5)
 model <- train(fm, data = obs.train, method = "lm", trControl = ctrl)
 summary(model)
 preds.cv_5 <- predict(model, newdata = obs.test, level = 0.95)
 postResample(preds.loocv, obs.test$re78)
+
 # Implementing Train Control using cv
 ctrl <- trainControl(method = "cv", number = 10)
 model <- train(fm, data = obs.train, method = "lm", trControl = ctrl)
